@@ -37,6 +37,11 @@ export async function main() {
       describe: "Delete content types as well",
       default: false,
     })
+    .option("exclude-content-types", {
+      type: "string",
+      describe: "Do not delete the following content types",
+      default: "",
+    })
     .option("assets", {
       type: "boolean",
       describe: "Delete assets as well",
@@ -61,6 +66,7 @@ export async function main() {
   const batchSize: number = argv["batch-size"];
   const isContentTypes: boolean = argv["content-types"];
   const isAssets: boolean = argv["assets"];
+  const excludeTypes: string[] = argv["exclude-content-types"].split(',');
   const yes: boolean = argv["yes"];
 
   const env: string = argv["env"] || "master";
@@ -81,7 +87,7 @@ export async function main() {
     if (!yes) {
       if (!(await promptForContentTypesConfirmation(spaceId, env))) return;
     }
-    await deleteContentTypes(contentfulSpace, batchSize, verbose, env);
+    await deleteContentTypes(contentfulSpace, batchSize, verbose, env, excludeTypes);
   }
 
   if (isAssets) {
@@ -197,14 +203,16 @@ async function deleteContentTypes(
   contentfulSpace: Space,
   batchSize: number,
   verbose: boolean,
-  environment: string
+  environment: string,
+  exceptions: string[]
 ) {
   const selectedEnvironment = await contentfulSpace.getEnvironment(environment);
   const contentTypesMetadata = await selectedEnvironment.getContentTypes({
     include: 0,
     limit: 0,
   });
-  let totalContentTypes = contentTypesMetadata.total;
+  const contentTypesToDelete = contentTypesMetadata.items.filter(item => !exceptions.includes(item.name));
+  let totalContentTypes = contentTypesToDelete.length;
   console.log(`Deleting ${totalContentTypes} content types`);
 
   // tslint:disable-next-line:max-line-length
@@ -217,10 +225,11 @@ async function deleteContentTypes(
       include: 0,
       limit: batchSize,
     });
-    totalContentTypes = contentTypes.total;
+    const contentTypesToDelete = contentTypes.items.filter(item => !exceptions.includes(item.name));
+    totalContentTypes = contentTypesToDelete.length;
 
     const promises: Array<Promise<void>> = [];
-    for (const contentType of contentTypes.items) {
+    for (const contentType of contentTypesToDelete) {
       const promise = unpublishAndDeleteContentType(
         contentType,
         contentTypesProgressBar,
